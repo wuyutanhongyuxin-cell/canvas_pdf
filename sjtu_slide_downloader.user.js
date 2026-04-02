@@ -24,6 +24,7 @@
   const BUTTON_BUSY_TEXT = '⏳ 处理中...';
   const DEFAULT_FILE_NAME = '课件';
   const LOCAL_SERVICE_URL = 'http://127.0.0.1:38765';
+  const LOCAL_JOB_TIMEOUT_MS = 10 * 60 * 1000;
   const WAIT_TIMEOUT_MS = 15000;
   const IMAGE_TIMEOUT_MS = 20000;
   const THUMBNAIL_SETTLE_MS = 7000;
@@ -571,7 +572,7 @@
         'Content-Type': 'application/json',
       },
       data: JSON.stringify(payload),
-      timeout: 60 * 1000,
+      timeout: LOCAL_JOB_TIMEOUT_MS,
     });
 
     if (response.status < 200 || response.status >= 300 || !result || !result.ok) {
@@ -672,7 +673,7 @@
         throw new Error('未找到可下载的课件图片，请先手动展开或滚动课件区域后再试');
       }
 
-      showToast(`找到 ${imageUrls.length} 张图片，正在提交到本地高清服务...`);
+      showToast(`找到 ${imageUrls.length} 张图片，正在提交到本地高清服务...\n这一步可能持续几分钟，请不要关闭页面或本地服务窗口`);
       const title = getNamingMetadata();
       const result = await sendJobToLocalService({
         title,
