@@ -1,6 +1,6 @@
 # canvas_pdf
 
-一个面向上海交通大学课程平台 `https://v.sjtu.edu.cn/` 的 userscript 项目，用来把课件缩略图自动收集、下载并合成为 PDF。
+一个面向上海交通大学课程平台 `https://*.sjtu.edu.cn/*` 的 userscript 项目，用来把课件缩略图自动收集、下载并合成为 PDF。
 
 当前仓库核心文件：
 
@@ -180,7 +180,7 @@
 1. 安装 Tampermonkey。
 2. 打开 Tampermonkey 新建脚本页面。
 3. 将 `sjtu_slide_downloader.user.js` 全部内容粘贴进去并保存。
-4. 打开 `https://v.sjtu.edu.cn/` 相关课程页面。
+4. 打开 `https://*.sjtu.edu.cn/*` 下的相关课程页面。
 5. 在课件页右下角点击“下载课件 PDF”。
 
 ## 4.3 运行前提
@@ -289,7 +289,7 @@ hotfixes: ['px_scaling']
 检查：
 
 - Tampermonkey 是否启用
-- 当前 URL 是否匹配 `https://v.sjtu.edu.cn/*`
+- 当前 URL 是否匹配 `https://*.sjtu.edu.cn/*`
 - 页面是否完整加载
 - 浏览器控制台是否有 userscript 报错
 
@@ -346,6 +346,7 @@ hotfixes: ['px_scaling']
 本次修复时，已对照官方文档核验以下点：
 
 - Tampermonkey 官方文档
+  - `@match` 支持子域名通配写法，如 `https://*.sjtu.edu.cn/*`
   - `GM_xmlhttpRequest(details)` 可用于受控网络请求
   - `@connect` 支持配置允许连接的域名，`*` 可作为兜底
 

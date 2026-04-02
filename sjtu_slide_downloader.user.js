@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         交大课件PDF下载器
 // @namespace    https://v.sjtu.edu.cn/
-// @version      1.1.0
+// @version      1.1.1
 // @description  一键提取交大课程平台课件，合成高清 PDF 下载
 // @author       dsy
-// @match        https://v.sjtu.edu.cn/*
+// @match        https://*.sjtu.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @connect      self
@@ -23,6 +23,13 @@
   const IMAGE_TIMEOUT_MS = 20000;
   const THUMBNAIL_SETTLE_MS = 7000;
   const STABLE_ROUNDS = 3;
+  const PAGE_MARKER_SELECTORS = [
+    '.ppt-card-wrapper__inner',
+    '.ppt-card-wrapper',
+    '[class*="ppt-card-wrapper__inner"]',
+    '[class*="ppt-card-wrapper"]',
+    'input[placeholder*="PPT"]',
+  ];
   const CONTAINER_SELECTORS = [
     '.ppt-card-wrapper__inner',
     '.ppt-card-wrapper',
@@ -205,6 +212,25 @@
       .sort((left, right) => scoreContainer(right) - scoreContainer(left));
 
     return candidates[0] || null;
+  }
+
+  function isLikelyCoursePage() {
+    const hostname = (location.hostname || '').toLowerCase();
+    if (!hostname.endsWith('.sjtu.edu.cn') && hostname !== 'sjtu.edu.cn') {
+      return false;
+    }
+
+    if (findBestSlideContainer()) {
+      return true;
+    }
+
+    for (const selector of PAGE_MARKER_SELECTORS) {
+      if (document.querySelector(selector)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function normalizeUrl(rawUrl) {
@@ -589,12 +615,27 @@
   }
 
   function bootstrap() {
-    if (document.body) {
+    if (testHooks && testHooks.disableBootstrap) {
+      return;
+    }
+
+    if (document.body && isLikelyCoursePage()) {
       createUi();
       return;
     }
 
-    window.addEventListener('DOMContentLoaded', createUi, { once: true });
+    const start = () => {
+      waitFor(() => (isLikelyCoursePage() ? document.body : null), '交大课件页面', 60000)
+        .then(createUi)
+        .catch(() => undefined);
+    };
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', start, { once: true });
+      return;
+    }
+
+    start();
   }
 
   if (testHooks) {
@@ -610,6 +651,7 @@
       scrollToLoadAll,
       waitForThumbnailSettle,
       findBestSlideContainer,
+      isLikelyCoursePage,
       handleDownload,
     });
   }

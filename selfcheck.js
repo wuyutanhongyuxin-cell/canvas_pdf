@@ -195,7 +195,7 @@ function createSandbox() {
     setImmediate,
     URL: URLCtor,
     Image: FakeImage,
-    location: { href: 'https://v.sjtu.edu.cn/course/1' },
+    location: { href: 'https://v.sjtu.edu.cn/course/1', hostname: 'v.sjtu.edu.cn' },
     document,
     window: {
       jspdf: { jsPDF: FakeJsPDF },
@@ -237,7 +237,7 @@ function createSandbox() {
         });
       });
     },
-    __SJTU_SLIDE_DOWNLOADER_TEST__: {},
+    __SJTU_SLIDE_DOWNLOADER_TEST__: { disableBootstrap: true },
   };
 
   sandbox.globalThis = sandbox;
@@ -272,6 +272,7 @@ async function main() {
   assert(typeof hooks.collectSlideImageUrls === 'function', 'Missing collectSlideImageUrls hook');
   assert(typeof hooks.generatePDF === 'function', 'Missing generatePDF hook');
   assert(typeof hooks.findBestSlideContainer === 'function', 'Missing findBestSlideContainer hook');
+  assert(typeof hooks.isLikelyCoursePage === 'function', 'Missing isLikelyCoursePage hook');
 
   assert(
     hooks.sanitizeFilename('课程: 第/1讲?') === '课程 第 1讲',
@@ -308,6 +309,16 @@ async function main() {
 
   document.setQuerySelectorAll('.ppt-card-wrapper__inner', [weakContainer, strongContainer]);
   assert(hooks.findBestSlideContainer() === strongContainer, 'findBestSlideContainer should prefer the richer scrollable candidate');
+  assert(hooks.isLikelyCoursePage() === true, 'isLikelyCoursePage should accept a page with a valid slide container');
+
+  document.setQuerySelectorAll('.ppt-card-wrapper__inner', []);
+  document.setQuerySelector('input[placeholder*="PPT"]', new FakeElement('input'));
+  assert(hooks.isLikelyCoursePage() === true, 'isLikelyCoursePage should accept a page with PPT-specific markers');
+
+  document.setQuerySelector('input[placeholder*="PPT"]', null);
+  sandbox.location.hostname = 'example.com';
+  assert(hooks.isLikelyCoursePage() === false, 'isLikelyCoursePage should reject non-SJTU hosts');
+  sandbox.location.hostname = 'v.sjtu.edu.cn';
 
   gmResponses.set('https://cdn.example.com/slide-1.png', {
     status: 200,
