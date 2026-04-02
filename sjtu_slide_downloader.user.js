@@ -5,12 +5,15 @@
 // @description  一键提取交大课程平台课件，合成高清 PDF 下载
 // @author       dsy
 // @match        https://*.sjtu.edu.cn/*
+// @match        http://*.sjtu.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        window.onurlchange
 // @connect      self
 // @connect      s3.jcloud.sjtu.edu.cn
 // @connect      *
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+// @run-at       document-body
 // ==/UserScript==
 
 (function () {
@@ -43,6 +46,8 @@
     btn: null,
     toast: null,
   };
+  let pageCheckTimer = null;
+  let bootstrappedUrl = '';
 
   const testHooks = globalThis.__SJTU_SLIDE_DOWNLOADER_TEST__;
 
@@ -117,6 +122,14 @@
     }
     ui.btn.disabled = isBusy;
     ui.btn.textContent = isBusy ? BUTTON_BUSY_TEXT : BUTTON_IDLE_TEXT;
+  }
+
+  function logDebug(message, extra) {
+    if (typeof extra === 'undefined') {
+      console.info(`[sjtu-pdf] ${message}`);
+      return;
+    }
+    console.info(`[sjtu-pdf] ${message}`, extra);
   }
 
   function getCourseTitle() {
@@ -612,6 +625,78 @@
 
     ui.btn = btn;
     ui.toast = toast;
+    logDebug('UI injected', { href: location.href });
+  }
+
+  function removeUi() {
+    if (ui.btn && typeof ui.btn.remove === 'function') {
+      ui.btn.remove();
+    }
+    if (ui.toast && typeof ui.toast.remove === 'function') {
+      ui.toast.remove();
+    }
+    ui.btn = null;
+    ui.toast = null;
+  }
+
+  function syncUiToPage() {
+    const matched = isLikelyCoursePage();
+    if (matched) {
+      createUi();
+      return true;
+    }
+
+    if (ui.btn || ui.toast) {
+      logDebug('Target markers disappeared, removing UI', { href: location.href });
+      removeUi();
+    }
+
+    return false;
+  }
+
+  function schedulePageCheck(reason, delay = 300) {
+    clearTimeout(pageCheckTimer);
+    pageCheckTimer = setTimeout(() => {
+      pageCheckTimer = null;
+      const currentUrl = location.href;
+      const changed = currentUrl !== bootstrappedUrl;
+      bootstrappedUrl = currentUrl;
+      logDebug(`Running page check: ${reason}`, { href: currentUrl, changed });
+      syncUiToPage();
+    }, delay);
+  }
+
+  function installSpaListeners() {
+    if ('onurlchange' in window) {
+      window.addEventListener('urlchange', () => {
+        schedulePageCheck('urlchange', 250);
+      });
+      logDebug('Registered window.onurlchange listener');
+    }
+
+    const historyObject = window.history;
+    if (!historyObject || historyObject.__sjtuPdfPatched) {
+      return;
+    }
+
+    for (const methodName of ['pushState', 'replaceState']) {
+      const original = historyObject[methodName];
+      if (typeof original !== 'function') {
+        continue;
+      }
+
+      historyObject[methodName] = function (...args) {
+        const result = original.apply(this, args);
+        schedulePageCheck(`history.${methodName}`, 150);
+        return result;
+      };
+    }
+
+    historyObject.__sjtuPdfPatched = true;
+    window.addEventListener('popstate', () => {
+      schedulePageCheck('popstate', 150);
+    });
+    logDebug('Registered history listeners fallback');
   }
 
   function bootstrap() {
@@ -619,14 +704,17 @@
       return;
     }
 
-    if (document.body && isLikelyCoursePage()) {
-      createUi();
-      return;
+    installSpaListeners();
+
+    if (document.body) {
+      schedulePageCheck('initial-body', 0);
     }
 
     const start = () => {
-      waitFor(() => (isLikelyCoursePage() ? document.body : null), '交大课件页面', 60000)
-        .then(createUi)
+      waitFor(() => (syncUiToPage() ? document.body : null), '交大课件页面', 60000)
+        .then(() => {
+          bootstrappedUrl = location.href;
+        })
         .catch(() => undefined);
     };
 

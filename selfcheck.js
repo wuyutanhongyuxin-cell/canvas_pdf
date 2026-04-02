@@ -32,6 +32,10 @@ class FakeElement {
     return child;
   }
 
+  remove() {
+    return undefined;
+  }
+
   addEventListener(type, listener) {
     this.eventListeners[type] = listener;
   }
@@ -94,7 +98,7 @@ class FakeDocument {
   }
 }
 
-function createSandbox() {
+function createSandbox(options = {}) {
   const document = new FakeDocument();
   const objectUrlMap = new Map();
   const gmResponses = new Map();
@@ -199,7 +203,20 @@ function createSandbox() {
     document,
     window: {
       jspdf: { jsPDF: FakeJsPDF },
-      addEventListener() {},
+      _listeners: {},
+      addEventListener(type, listener) {
+        this._listeners[type] = listener;
+      },
+      dispatchEvent(type) {
+        if (typeof this._listeners[type] === 'function') {
+          this._listeners[type]();
+        }
+      },
+      history: {
+        pushState() {},
+        replaceState() {},
+      },
+      onurlchange: null,
     },
     MutationObserver: class {
       constructor(callback) {
@@ -237,7 +254,7 @@ function createSandbox() {
         });
       });
     },
-    __SJTU_SLIDE_DOWNLOADER_TEST__: { disableBootstrap: true },
+    __SJTU_SLIDE_DOWNLOADER_TEST__: { disableBootstrap: options.disableBootstrap !== false },
   };
 
   sandbox.globalThis = sandbox;
@@ -319,6 +336,7 @@ async function main() {
   sandbox.location.hostname = 'example.com';
   assert(hooks.isLikelyCoursePage() === false, 'isLikelyCoursePage should reject non-SJTU hosts');
   sandbox.location.hostname = 'v.sjtu.edu.cn';
+  sandbox.location.href = 'https://v.sjtu.edu.cn/course/2';
 
   gmResponses.set('https://cdn.example.com/slide-1.png', {
     status: 200,
@@ -348,6 +366,19 @@ async function main() {
   assert(pdfInstances[0].pages[0].format[0] === 1200 && pdfInstances[0].pages[0].format[1] === 900, 'First page should use the first successful image size');
   assert(pdfInstances[0].pages[1].format[0] === 1920 && pdfInstances[0].pages[1].format[1] === 1080, 'Subsequent pages should use each image size');
   assert(pdfInstances[0].savedAs === '课程 第 1讲.pdf', 'generatePDF should save with a sanitized file name');
+
+  const boot = createSandbox({ disableBootstrap: false });
+  const bootContainer = new FakeElement('div');
+  bootContainer._images = [createImageNode({ src: 'https://cdn.example.com/1.png' })];
+  bootContainer.children = [1];
+  bootContainer.scrollWidth = 1600;
+  bootContainer.clientWidth = 400;
+  boot.document.setQuerySelectorAll('.ppt-card-wrapper__inner', [bootContainer]);
+  vm.runInNewContext(source, boot.sandbox, { filename: 'sjtu_slide_downloader.user.js' });
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert(typeof boot.sandbox.window._listeners.urlchange === 'function', 'bootstrap should register a urlchange listener when supported');
+  assert(boot.document.getElementById('sjtu-pdf-btn'), 'bootstrap should inject the button on a matching page');
 
   console.log('selfcheck passed');
 }
