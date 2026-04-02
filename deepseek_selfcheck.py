@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from deepseek_client import request_json_completion
+import os
+import tempfile
+from pathlib import Path
+
+from deepseek_client import get_deepseek_api_key, load_dotenv, request_json_completion
 
 
 class FakeResponse:
@@ -30,6 +34,17 @@ class FakeSession:
 
 
 def main() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        env_path = Path(temp_dir) / ".env"
+        env_path.write_text("DEEPSEEK_API_KEY=from-dotenv\n", encoding="utf-8")
+        loaded = load_dotenv(env_path)
+        assert loaded["DEEPSEEK_API_KEY"] == "from-dotenv"
+        assert get_deepseek_api_key(env_path) == "from-dotenv"
+
+        os.environ["DEEPSEEK_API_KEY"] = "from-env"
+        assert get_deepseek_api_key(env_path) == "from-env"
+        del os.environ["DEEPSEEK_API_KEY"]
+
     result = request_json_completion(
         system_prompt="system",
         user_prompt="user",

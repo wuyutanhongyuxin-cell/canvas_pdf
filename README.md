@@ -10,6 +10,7 @@
 - `pdf_postprocess.py`
 - `deepseek_selfcheck.py`
 - `postprocess_selfcheck.py`
+- `.env.example`
 - `service_selfcheck.py`
 - `start_local_pdf_service.bat`
 - `selfcheck.js`
@@ -258,7 +259,7 @@
 1. 安装 Tampermonkey。
 2. 打开 Tampermonkey 新建脚本页面。
 3. 将 `sjtu_slide_downloader.user.js` 全部内容粘贴进去并保存。
-4. 如需启用 DeepSeek 命名增强，先设置环境变量 `DEEPSEEK_API_KEY`。
+4. 如需启用 DeepSeek 命名增强，在项目目录创建 `.env` 文件，并写入 `DEEPSEEK_API_KEY=你的密钥`。
 5. 双击运行 `start_local_pdf_service.bat`，或在项目目录执行 `python local_pdf_service.py`。
 6. 打开 `https://*.sjtu.edu.cn/*` 下的相关课程页面。
 7. 在课件页右下角点击“下载高清 PDF”。
@@ -272,7 +273,7 @@
 - 浏览器没有阻止脚本运行
 - Tampermonkey 已启用当前脚本
 - 本地服务已经启动
-- 若要启用命名增强，`DEEPSEEK_API_KEY` 已设置
+- 若要启用命名增强，项目目录下已存在 `.env` 文件，或环境变量 `DEEPSEEK_API_KEY` 已设置
 
 ## 5. 本地开发与自检
 
@@ -449,15 +450,19 @@ E:\zhiwang_text\canvas_course
 
 ### 7.6 如何启用 DeepSeek 命名增强
 
-Windows `cmd` 示例：
+在项目目录创建 `.env` 文件，内容示例可参考：
 
-```cmd
-set DEEPSEEK_API_KEY=你的密钥
-cd /d E:\claude_ask\canvas_pdf
-python local_pdf_service.py
+```text
+DEEPSEEK_API_KEY=sk-your-deepseek-key
 ```
 
-如果不设置 `DEEPSEEK_API_KEY`：
+仓库里已提供模板文件：
+
+[` .env.example `](/E:/claude_ask/canvas_pdf/.env.example)
+
+你可以复制其内容，创建本地 `.env` 文件。
+
+如果不设置 `.env` 或环境变量 `DEEPSEEK_API_KEY`：
 
 - 本地服务仍然可以正常工作
 - 只是会跳过 DeepSeek 命名增强
