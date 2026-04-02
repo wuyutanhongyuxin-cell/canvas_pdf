@@ -250,6 +250,7 @@ function createSandbox(options = {}) {
           status: response.status,
           statusText: response.statusText || 'OK',
           response: response.blob,
+          responseText: response.responseText || '',
           finalUrl: response.finalUrl || details.url,
         });
       });
@@ -290,6 +291,8 @@ async function main() {
   assert(typeof hooks.generatePDF === 'function', 'Missing generatePDF hook');
   assert(typeof hooks.findBestSlideContainer === 'function', 'Missing findBestSlideContainer hook');
   assert(typeof hooks.isLikelyCoursePage === 'function', 'Missing isLikelyCoursePage hook');
+  assert(typeof hooks.checkLocalService === 'function', 'Missing checkLocalService hook');
+  assert(typeof hooks.sendJobToLocalService === 'function', 'Missing sendJobToLocalService hook');
 
   assert(
     hooks.sanitizeFilename('课程: 第/1讲?') === '课程 第 1讲',
@@ -337,6 +340,23 @@ async function main() {
   assert(hooks.isLikelyCoursePage() === false, 'isLikelyCoursePage should reject non-SJTU hosts');
   sandbox.location.hostname = 'v.sjtu.edu.cn';
   sandbox.location.href = 'https://v.sjtu.edu.cn/course/2';
+
+  gmResponses.set('http://127.0.0.1:38765/health', {
+    status: 200,
+    responseText: JSON.stringify({ ok: true, service: 'sjtu-pdf-local-service' }),
+  });
+  gmResponses.set('http://127.0.0.1:38765/jobs', {
+    status: 200,
+    responseText: JSON.stringify({
+      ok: true,
+      page_count: 2,
+      pdf_path: 'D:/Downloads/课程 第 1讲.pdf',
+    }),
+  });
+  const healthResult = await hooks.checkLocalService();
+  assert(healthResult.ok === true, 'checkLocalService should validate the local service health endpoint');
+  const jobResult = await hooks.sendJobToLocalService({ title: '课程: 第/1讲?', imageUrls: ['https://cdn.example.com/1.jpg'] });
+  assert(jobResult.ok === true && jobResult.page_count === 2, 'sendJobToLocalService should parse a successful local job response');
 
   gmResponses.set('https://cdn.example.com/slide-1.png', {
     status: 200,

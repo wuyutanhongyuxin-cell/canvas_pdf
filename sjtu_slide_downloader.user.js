@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         交大课件PDF下载器
+// @name         交大课件高清PDF下载器
 // @namespace    https://v.sjtu.edu.cn/
-// @version      1.1.1
-// @description  一键提取交大课程平台课件，合成高清 PDF 下载
+// @version      2.0.0
+// @description  一键提取交大课程平台课件，通过本地服务自动下载原图并合成高清 PDF
 // @author       dsy
 // @match        https://*.sjtu.edu.cn/*
 // @match        http://*.sjtu.edu.cn/*
@@ -10,18 +10,20 @@
 // @grant        GM_addStyle
 // @grant        window.onurlchange
 // @connect      self
+// @connect      127.0.0.1
+// @connect      localhost
 // @connect      s3.jcloud.sjtu.edu.cn
 // @connect      *
-// @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 // @run-at       document-body
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const BUTTON_IDLE_TEXT = '📄 下载课件 PDF';
+  const BUTTON_IDLE_TEXT = '📄 下载高清 PDF';
   const BUTTON_BUSY_TEXT = '⏳ 处理中...';
   const DEFAULT_FILE_NAME = '课件';
+  const LOCAL_SERVICE_URL = 'http://127.0.0.1:38765';
   const WAIT_TIMEOUT_MS = 15000;
   const IMAGE_TIMEOUT_MS = 20000;
   const THUMBNAIL_SETTLE_MS = 7000;
@@ -130,6 +132,27 @@
       return;
     }
     console.info(`[sjtu-pdf] ${message}`, extra);
+  }
+
+  function requestJson(details) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        ...details,
+        onload: (response) => {
+          try {
+            const rawText = typeof response.responseText === 'string'
+              ? response.responseText
+              : '';
+            const payload = rawText ? JSON.parse(rawText) : null;
+            resolve({ response, payload });
+          } catch (error) {
+            reject(new Error(`JSON 解析失败: ${error.message}`));
+          }
+        },
+        onerror: () => reject(new Error(`请求失败: ${details.url}`)),
+        ontimeout: () => reject(new Error(`请求超时: ${details.url}`)),
+      });
+    });
   }
 
   function getCourseTitle() {
@@ -497,6 +520,38 @@
     }
   }
 
+  async function checkLocalService() {
+    const { response, payload } = await requestJson({
+      method: 'GET',
+      url: `${LOCAL_SERVICE_URL}/health`,
+      timeout: 5000,
+    });
+
+    if (response.status < 200 || response.status >= 300 || !payload || !payload.ok) {
+      throw new Error('本地高清 PDF 服务未就绪');
+    }
+
+    return payload;
+  }
+
+  async function sendJobToLocalService(payload) {
+    const { response, payload: result } = await requestJson({
+      method: 'POST',
+      url: `${LOCAL_SERVICE_URL}/jobs`,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: JSON.stringify(payload),
+      timeout: 60 * 1000,
+    });
+
+    if (response.status < 200 || response.status >= 300 || !result || !result.ok) {
+      throw new Error((result && result.error) || '本地服务处理失败');
+    }
+
+    return result;
+  }
+
   function ensureJsPdf() {
     const jspdfNamespace = window.jspdf;
     if (!jspdfNamespace || typeof jspdfNamespace.jsPDF !== 'function') {
@@ -570,6 +625,9 @@
     setButtonBusy(true);
 
     try {
+      showToast('正在检查本地高清 PDF 服务...');
+      await checkLocalService();
+
       showToast('正在查找课件区域...');
       const container = await waitFor(findBestSlideContainer, '课件缩略图容器');
 
@@ -585,20 +643,23 @@
         throw new Error('未找到可下载的课件图片，请先手动展开或滚动课件区域后再试');
       }
 
-      showToast(`找到 ${imageUrls.length} 张图片，开始生成 PDF...`);
+      showToast(`找到 ${imageUrls.length} 张图片，正在提交到本地高清服务...`);
       const title = getCourseTitle();
-      const result = await generatePDF(imageUrls, title);
+      const result = await sendJobToLocalService({
+        title,
+        sourceUrl: location.href,
+        imageUrls,
+      });
 
-      if (result.failureCount > 0) {
-        showToast(`⚠️ 已生成 PDF\n成功 ${result.successCount} 页，失败 ${result.failureCount} 页\n详细失败信息见控制台`);
-      } else {
-        showToast(`✅ 下载完成！共 ${result.successCount} 页`);
-      }
+      showToast(`✅ 高清 PDF 已生成\n页数 ${result.page_count}\n保存位置 ${result.pdf_path}`);
 
       setTimeout(hideToast, 5000);
       return result;
     } catch (error) {
-      showToast(`❌ 出错: ${error.message}`);
+      const help = error.message.includes('127.0.0.1')
+        ? '\n请先运行: python local_pdf_service.py'
+        : '';
+      showToast(`❌ 出错: ${error.message}${help}`);
       console.error(error);
       throw error;
     } finally {
@@ -740,6 +801,8 @@
       waitForThumbnailSettle,
       findBestSlideContainer,
       isLikelyCoursePage,
+      checkLocalService,
+      sendJobToLocalService,
       handleDownload,
     });
   }

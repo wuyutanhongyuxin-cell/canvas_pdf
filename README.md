@@ -1,10 +1,13 @@
 # canvas_pdf
 
-一个面向上海交通大学课程平台 `https://*.sjtu.edu.cn/*` 的 userscript 项目，用来把课件缩略图自动收集、下载并合成为 PDF。
+一个面向上海交通大学课程平台 `https://*.sjtu.edu.cn/*` 的自动化项目，用来把课件缩略图自动收集、提交给本机服务下载原图，并在本地合成为高清 PDF。
 
 当前仓库核心文件：
 
 - `sjtu_slide_downloader.user.js`
+- `local_pdf_service.py`
+- `service_selfcheck.py`
+- `start_local_pdf_service.bat`
 - `selfcheck.js`
 
 最后一次修复与文档整理日期：2026-04-02
@@ -15,13 +18,13 @@
 
 这个脚本做的事情是：
 
-1. 在课程页面右下角注入一个“下载课件 PDF”按钮。
+1. 在课程页面右下角注入一个“下载高清 PDF”按钮。
 2. 自动寻找课件缩略图容器。
 3. 自动滚动容器，尽量触发懒加载。
 4. 收集每一页课件图片地址。
-5. 逐页拉取图片。
-6. 使用 `jsPDF` 把成功下载的页面写入 PDF。
-7. 自动下载生成好的 PDF 文件。
+5. 将任务发送给本机 `127.0.0.1` 上运行的 Python 服务。
+6. 本地服务下载原始图片。
+7. 本地服务用 Pillow 合成高清 PDF 并保存到本地目录。
 
 ## 2. 本次修复了什么
 
@@ -74,9 +77,9 @@
 - 到达末尾后，不是立刻结束，而是等待图片集合稳定若干轮
 - 只有当 URL 集合连续稳定后才进入导出阶段
 
-### 2.3 PDF 生成更稳
+### 2.3 本地高清合成更稳
 
-旧版实现的问题：
+旧版浏览器端直接 `jsPDF` 合成的问题：
 
 - 页面失败时只是 `console.warn`
 - 但仍然继续走“下载完成”提示
@@ -84,13 +87,22 @@
 
 现在的实现改为：
 
-- 每一页单独拉取并单独解码
-- 只有图片真正成功加载后，才写进 PDF
-- 部分失败时，不再制造空白页
-- 全部失败时，直接抛错，不生成伪成功 PDF
-- 最终会返回成功页数和失败页数
+- 浏览器脚本只负责抓取 URL 和页序
+- 本地 Python 服务负责下载原图
+- 本地 Pillow 负责在本机合成 PDF
+- 浏览器端不再承担最终高清 PDF 的重编码任务
+- 服务端返回保存路径，便于确认结果
 
-### 2.4 图片尺寸与格式更稳
+### 2.4 本地服务支持一条龙自动化
+
+现在的实现新增：
+
+- `GET /health` 用于检查本地服务是否已启动
+- `POST /jobs` 用于提交下载与合成任务
+- Windows 启动脚本 `start_local_pdf_service.bat`
+- Python 自检脚本 `service_selfcheck.py`
+
+### 2.5 图片尺寸与格式更稳
 
 旧版强行把所有图片都按：
 
@@ -111,7 +123,7 @@
 - 按 MIME 类型或 URL 猜测图片格式
 - 使用 `HTMLImageElement` 写入 PDF
 
-### 2.5 文件名更稳
+### 2.6 文件名更稳
 
 课件标题里经常包含：
 
@@ -124,7 +136,7 @@
 
 现在会自动做文件名清洗，避免保存失败。
 
-### 2.6 加了可重复执行的自动化自检
+### 2.7 加了可重复执行的自动化自检
 
 项目现在附带 `selfcheck.js`，可以在本地做一轮快速回归：
 
@@ -132,8 +144,10 @@
 - 校验文件名清洗
 - 校验图片 URL 收集与去重
 - 校验容器识别逻辑
-- 校验部分页面失败时的 PDF 生成逻辑
-- 校验 `px_scaling` 热修复是否启用
+- 校验本地服务健康检查与任务提交逻辑
+- 校验部分页面失败时的浏览器端兜底 PDF 生成逻辑
+
+同时附带 `service_selfcheck.py`，用于验证本地 Pillow 合成流程。
 
 ## 3. 项目结构说明
 
@@ -180,6 +194,23 @@
 - 用假数据模拟成功与失败的下载场景
 - 检查返回结果是否符合预期
 
+### 3.3 `local_pdf_service.py`
+
+这是本地高清 PDF 服务，负责：
+
+- 提供 `GET /health`
+- 提供 `POST /jobs`
+- 下载原始课件图片
+- 使用 Pillow 合成本地高清 PDF
+
+### 3.4 `service_selfcheck.py`
+
+这是 Python 侧自检脚本，会生成两张测试图片并验证 PDF 合成。
+
+### 3.5 `start_local_pdf_service.bat`
+
+这是 Windows 一键启动入口，双击即可启动本地服务。
+
 ## 4. 安装方法
 
 ## 4.1 浏览器环境
@@ -194,8 +225,9 @@
 1. 安装 Tampermonkey。
 2. 打开 Tampermonkey 新建脚本页面。
 3. 将 `sjtu_slide_downloader.user.js` 全部内容粘贴进去并保存。
-4. 打开 `https://*.sjtu.edu.cn/*` 下的相关课程页面。
-5. 在课件页右下角点击“下载课件 PDF”。
+4. 双击运行 `start_local_pdf_service.bat`，或在项目目录执行 `python local_pdf_service.py`。
+5. 打开 `https://*.sjtu.edu.cn/*` 下的相关课程页面。
+6. 在课件页右下角点击“下载高清 PDF”。
 
 ## 4.3 运行前提
 
@@ -205,6 +237,7 @@
 - 课件缩略图区域已经渲染出来
 - 浏览器没有阻止脚本运行
 - Tampermonkey 已启用当前脚本
+- 本地服务已经启动
 
 ## 5. 本地开发与自检
 
@@ -215,18 +248,21 @@
 ```powershell
 node --check sjtu_slide_downloader.user.js
 node --check selfcheck.js
+python -m py_compile local_pdf_service.py service_selfcheck.py
 ```
 
 ## 5.2 自动化自检
 
 ```powershell
 node selfcheck.js
+python service_selfcheck.py
 ```
 
 期望输出：
 
 ```text
 selfcheck passed
+service selfcheck passed
 ```
 
 说明：
@@ -234,6 +270,7 @@ selfcheck passed
 - 自检过程中会故意模拟“第二页下载失败”的场景
 - 控制台出现该失败日志是预期行为
 - 只要最终输出 `selfcheck passed`，说明当前核心逻辑符合断言
+- `service selfcheck passed` 表示本地 Pillow 合成链路正常
 
 ## 5.3 我这次实际做过的检查
 
@@ -243,12 +280,15 @@ selfcheck passed
 node --check sjtu_slide_downloader.user.js
 node --check selfcheck.js
 node selfcheck.js
+python -m py_compile local_pdf_service.py service_selfcheck.py
+python service_selfcheck.py
 ```
 
 结果：
 
-- 两个文件均通过语法检查
-- 自动化自检通过
+- JS 与 Python 文件均通过语法检查
+- 浏览器脚本自检通过
+- 本地服务自检通过
 
 ## 6. 核心工作原理
 
@@ -269,32 +309,27 @@ node selfcheck.js
 
 Tampermonkey 提供的 `GM_xmlhttpRequest` 可以在声明了 `@connect` 后更稳定地获取跨域资源，这就是这里保留它的原因。
 
-## 6.3 为什么启用 `px_scaling`
+## 6.3 为什么要引入本地服务
 
-脚本使用 `jsPDF` 的 `px` 单位按图片像素尺寸生成页面。
+浏览器端直接合成 PDF 有两个天然问题：
 
-根据 jsPDF 官方文档，如果使用 `px` 单位，需要启用：
+- 图片可能被再次压缩或重编码
+- 大课件在浏览器内存里处理不稳定
 
-```js
-hotfixes: ['px_scaling']
-```
+本项目现在把高清 PDF 合成挪到本地 Python 服务：
 
-否则页面尺寸可能缩放不正确。
+1. 浏览器负责抓课件图片 URL 和页序。
+2. 本地服务下载原始图片。
+3. Pillow 在本机合成 PDF。
 
-## 6.4 为什么改成“成功一页写一页”
+这样更接近“原图下载后再本地整理”的流程，质量和稳定性都更好。
 
-这是为了避免：
+## 6.4 为什么保留浏览器端图片处理逻辑
 
-- 先加页，再发现图片下载失败
-- 最终 PDF 里出现空白页
+项目里仍保留了一部分浏览器端图片处理与自检代码，原因有两个：
 
-现在的顺序是：
-
-1. 先拉图
-2. 再解码
-3. 确认成功后才写入 PDF
-
-这样失败页不会污染最终文件。
+- 这部分逻辑仍用于发现页面里的真实课件图片 URL
+- 现有自动化自检依赖这些函数验证顺序、失败路径和兼容性
 
 ## 7. 常见问题排查
 
@@ -330,7 +365,7 @@ hotfixes: ['px_scaling']
 - 站点返回了临时失效链接
 - 最后几页图片仍未出现
 
-现在脚本会在 toast 中提示成功页数和失败页数，详细失败信息会输出到控制台。
+现在脚本会把任务发给本地服务。若合成结果页数不完整，优先检查本地服务终端输出和浏览器控制台日志。
 
 ### 7.4 下载的文件名不对
 
@@ -363,21 +398,16 @@ hotfixes: ['px_scaling']
   - `@match` 支持子域名通配写法，如 `https://*.sjtu.edu.cn/*`
   - `GM_xmlhttpRequest(details)` 可用于受控网络请求
   - `@connect` 支持配置允许连接的域名，`*` 可作为兜底
-
-- jsPDF 官方文档
-  - `jsPDF` 在使用 `unit: 'px'` 时应启用 `hotfixes: ['px_scaling']`
-  - `addImage` 支持 `HTMLImageElement`
-  - `addPage` 支持自定义页面尺寸
-
-- MDN 官方文档
-  - `HTMLImageElement.decode()` 返回 Promise，可用于在图片解码完成后再继续处理
+- Python 官方文档
+  - `http.server` 可快速提供本地 HTTP 服务
+- Pillow 官方文档
+  - `Image.save(..., save_all=True, append_images=...)` 可将多张图片合成为 PDF
 
 建议优先参考这些官方文档：
 
 - Tampermonkey: https://www.tampermonkey.net/documentation.php
-- jsPDF: https://parallax.github.io/jsPDF/docs/jsPDF.html
-- jsPDF addImage: https://parallax.github.io/jsPDF/docs/module-addImage.html#~addImage
-- MDN decode: https://developer.mozilla.org/en-US/docs/Web/API/HTMLImageElement/decode
+- Python `http.server`: https://docs.python.org/3/library/http.server.html
+- Pillow Image: https://pillow.readthedocs.io/en/stable/reference/Image.html
 
 ## 10. GitHub 同步
 
