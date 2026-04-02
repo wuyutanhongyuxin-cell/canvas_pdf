@@ -16,6 +16,8 @@ from typing import Iterable
 import requests
 from PIL import Image
 
+from pdf_postprocess import analyze_pages, select_pages_to_keep, suggest_title_with_deepseek
+
 
 HOST = "127.0.0.1"
 PORT = 38765
@@ -119,7 +121,7 @@ def build_pdf_from_paths(image_paths: Iterable[Path], pdf_path: Path) -> dict:
             image.close()
 
 
-def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None) -> dict:
+def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, source_url: str = "") -> dict:
     if not urls:
         raise ValueError("图片 URL 列表为空")
 
@@ -127,17 +129,32 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None) 
     target_dir = ensure_dir(output_dir or DEFAULT_OUTPUT_DIR)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     workspace = ensure_dir(target_dir / f"{safe_title}-{timestamp}")
-    pdf_path = make_unique_file_path(target_dir / f"{safe_title}.pdf")
 
     image_paths = download_images(urls, workspace)
-    build_result = build_pdf_from_paths(image_paths, pdf_path)
+    page_analyses = analyze_pages(image_paths)
+    kept_paths, full_analyses = select_pages_to_keep(page_analyses)
+    title_result = suggest_title_with_deepseek(
+        original_title=safe_title,
+        source_url=source_url,
+        page_analyses=full_analyses,
+        kept_count=len(kept_paths),
+        dropped_count=len(image_paths) - len(kept_paths),
+    )
+    final_title = sanitize_filename(title_result["suggested_title"], fallback=safe_title)
+    pdf_path = make_unique_file_path(target_dir / f"{final_title}.pdf")
+    build_result = build_pdf_from_paths(kept_paths, pdf_path)
     return {
         "ok": True,
-        "title": safe_title,
+        "title": final_title,
+        "original_title": safe_title,
         "page_count": build_result["page_count"],
         "pdf_path": build_result["pdf_path"],
         "workspace": str(workspace),
         "image_count": len(image_paths),
+        "dropped_count": len(image_paths) - len(kept_paths),
+        "used_deepseek": title_result["used_deepseek"],
+        "deepseek_reasoning": title_result["reasoning"],
+        "page_analyses": full_analyses,
     }
 
 
@@ -175,6 +192,7 @@ class PdfJobHandler(BaseHTTPRequestHandler):
                 title=payload.get("title") or "课件",
                 urls=list(payload.get("imageUrls") or []),
                 output_dir=self.config.output_dir,
+                source_url=payload.get("sourceUrl") or "",
             )
         except Exception as error:  # noqa: BLE001
             self._write_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
