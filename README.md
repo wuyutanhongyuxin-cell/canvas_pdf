@@ -8,11 +8,13 @@
 - 尽量过滤明显无内容的页面
 - 在可用时用 DeepSeek 做命名增强
 
-当前默认输出目录：
+当前示例默认输出目录：
 
 ```text
 E:\zhiwang_text\canvas_course
 ```
+
+如果你交付给别人使用，建议按下面“PDF 保存位置”里的方式改成他们自己的目录。
 
 ## 轻盈架构
 
@@ -117,11 +119,43 @@ start_local_pdf_service.bat
 
 ### PDF 保存位置
 
-默认保存在：
+当前仓库里的示例默认路径是：
 
 ```text
 E:\zhiwang_text\canvas_course
 ```
+
+这不是固定要求，可以改。
+
+如果你是面向客户交付，推荐用下面两种方式之一：
+
+方式一：启动时临时指定输出目录
+
+```cmd
+cd /d E:\claude_ask\canvas_pdf
+python local_pdf_service.py --output-dir "D:\Canvas PDF"
+```
+
+方式二：直接修改默认路径
+
+打开 [local_pdf_service.py](/E:/claude_ask/canvas_pdf/local_pdf_service.py)，找到：
+
+```python
+DEFAULT_OUTPUT_DIR = Path(r"E:\zhiwang_text\canvas_course")
+```
+
+改成客户自己的目录，例如：
+
+```python
+DEFAULT_OUTPUT_DIR = Path(r"D:\Canvas PDF")
+```
+
+改完后重启本地服务即可。
+
+小建议：
+- 路径尽量用纯英文或常见中文目录
+- 不要放到权限很严格的系统目录
+- 给客户时最好提前帮他们改好，不要让他们自己找代码
 
 ### 重名处理
 
@@ -178,11 +212,6 @@ E:\zhiwang_text\canvas_course
 
 DeepSeek 当前不直接读取 PDF 图片内容做视觉理解。  
 它主要用于在可用时把文件名整理得更自然。
-
-### 6. `.env` 不要提交到 GitHub
-
-`.env` 只应保留在本地。  
-仓库里只保留 `.env.example`。
 
 ## 快速排障
 
