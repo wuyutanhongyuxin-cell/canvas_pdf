@@ -125,7 +125,16 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, 
     if not urls:
         raise ValueError("图片 URL 列表为空")
 
-    safe_title = sanitize_filename(title)
+    page_title = ""
+    course_title = ""
+    lecture_label = ""
+    if isinstance(title, dict):
+        page_title = str(title.get("pageTitle") or "")
+        course_title = str(title.get("courseTitle") or "")
+        lecture_label = str(title.get("lectureLabel") or "")
+        safe_title = sanitize_filename(title.get("originalTitle") or title.get("title") or "课件")
+    else:
+        safe_title = sanitize_filename(title)
     target_dir = ensure_dir(output_dir or DEFAULT_OUTPUT_DIR)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     workspace = ensure_dir(target_dir / f"{safe_title}-{timestamp}")
@@ -136,6 +145,9 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, 
     title_result = suggest_title_with_deepseek(
         original_title=safe_title,
         source_url=source_url,
+        page_title=page_title,
+        course_title=course_title,
+        lecture_label=lecture_label,
         page_analyses=full_analyses,
         kept_count=len(kept_paths),
         dropped_count=len(image_paths) - len(kept_paths),
@@ -154,6 +166,8 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, 
         "dropped_count": len(image_paths) - len(kept_paths),
         "used_deepseek": title_result["used_deepseek"],
         "deepseek_reasoning": title_result["reasoning"],
+        "deepseek_error": title_result.get("deepseek_error", ""),
+        "lecture_label": lecture_label,
         "page_analyses": full_analyses,
     }
 

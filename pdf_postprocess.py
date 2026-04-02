@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import statistics
+import re
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +104,9 @@ def build_naming_prompt(
     *,
     original_title: str,
     source_url: str,
+    page_title: str,
+    course_title: str,
+    lecture_label: str,
     page_analyses: list[dict[str, Any]],
     kept_count: int,
     dropped_count: int,
@@ -113,6 +116,9 @@ def build_naming_prompt(
         "请基于以下课件信息，生成一个适合 Windows 文件名的简洁中文 PDF 标题。"
         "输出 JSON，字段必须包含 suggested_title 和 reasoning。"
         f"\noriginal_title: {original_title}"
+        f"\npage_title: {page_title}"
+        f"\ncourse_title: {course_title}"
+        f"\nlecture_label: {lecture_label}"
         f"\nsource_url: {source_url}"
         f"\nkept_count: {kept_count}"
         f"\ndropped_count: {dropped_count}"
@@ -120,19 +126,65 @@ def build_naming_prompt(
     )
 
 
+def normalize_title_piece(text: str) -> str:
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    text = re.sub(r"[\\/:*?\"<>|]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def extract_lecture_label(*candidates: str) -> str:
+    pattern = re.compile(r"第\s*0*(\d{1,3})\s*讲")
+    for candidate in candidates:
+        match = pattern.search(candidate or "")
+        if match:
+            return f"第{int(match.group(1)):02d}讲"
+    return ""
+
+
+def build_fallback_title(
+    *,
+    original_title: str,
+    page_title: str,
+    course_title: str,
+    lecture_label: str,
+    kept_count: int,
+) -> str:
+    lecture = extract_lecture_label(lecture_label, page_title, original_title)
+    course = normalize_title_piece(course_title) or normalize_title_piece(page_title) or normalize_title_piece(original_title) or "课件"
+    course = re.sub(r"第\s*0*\d+\s*讲", "", course).strip(" -_")
+
+    pieces = [piece for piece in [course, lecture] if piece]
+    if not pieces:
+        pieces = ["课件"]
+    return f"{'_'.join(pieces)}_{kept_count}页保留"
+
+
 def suggest_title_with_deepseek(
     *,
     original_title: str,
     source_url: str,
+    page_title: str,
+    course_title: str,
+    lecture_label: str,
     page_analyses: list[dict[str, Any]],
     kept_count: int,
     dropped_count: int,
 ) -> dict[str, Any]:
+    fallback_title = build_fallback_title(
+        original_title=original_title,
+        page_title=page_title,
+        course_title=course_title,
+        lecture_label=lecture_label,
+        kept_count=kept_count,
+    )
+
     if not is_deepseek_enabled():
         return {
             "used_deepseek": False,
-            "suggested_title": original_title,
+            "suggested_title": fallback_title,
             "reasoning": "DEEPSEEK_API_KEY 未设置，跳过命名增强",
+            "deepseek_error": "",
         }
 
     system_prompt = (
@@ -143,15 +195,27 @@ def suggest_title_with_deepseek(
     user_prompt = build_naming_prompt(
         original_title=original_title,
         source_url=source_url,
+        page_title=page_title,
+        course_title=course_title,
+        lecture_label=lecture_label,
         page_analyses=page_analyses,
         kept_count=kept_count,
         dropped_count=dropped_count,
     )
-    result = request_json_completion(system_prompt=system_prompt, user_prompt=user_prompt)
+    try:
+        result = request_json_completion(system_prompt=system_prompt, user_prompt=user_prompt)
+    except Exception as error:
+        return {
+            "used_deepseek": False,
+            "suggested_title": fallback_title,
+            "reasoning": "DeepSeek 调用失败，已回退到本地命名",
+            "deepseek_error": str(error),
+        }
 
     suggested = str(result.get("suggested_title") or original_title).strip()
     return {
         "used_deepseek": True,
-        "suggested_title": suggested or original_title,
+        "suggested_title": suggested or fallback_title,
         "reasoning": result.get("reasoning") or "",
+        "deepseek_error": "",
     }

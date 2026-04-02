@@ -66,6 +66,8 @@ def request_json_completion(
         raise DeepSeekError("未设置 DEEPSEEK_API_KEY")
 
     client = session or requests.Session()
+    if hasattr(client, "trust_env"):
+        client.trust_env = False
     payload = {
         "model": model,
         "messages": [

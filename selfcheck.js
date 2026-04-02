@@ -293,6 +293,7 @@ async function main() {
   assert(typeof hooks.isLikelyCoursePage === 'function', 'Missing isLikelyCoursePage hook');
   assert(typeof hooks.checkLocalService === 'function', 'Missing checkLocalService hook');
   assert(typeof hooks.sendJobToLocalService === 'function', 'Missing sendJobToLocalService hook');
+  assert(typeof hooks.extractLectureLabel === 'function', 'Missing extractLectureLabel hook');
 
   assert(
     hooks.sanitizeFilename('课程: 第/1讲?') === '课程 第 1讲',
@@ -340,6 +341,9 @@ async function main() {
   assert(hooks.isLikelyCoursePage() === false, 'isLikelyCoursePage should reject non-SJTU hosts');
   sandbox.location.hostname = 'v.sjtu.edu.cn';
   sandbox.location.href = 'https://v.sjtu.edu.cn/course/2';
+  document.setQuerySelectorAll('div, span, li, p, button, h3, h4', [new FakeElement('div')]);
+  document.multiResults.set('div, span, li, p, button, h3, h4', [{ textContent: '第10讲 2026-03-16', querySelectorAll() { return []; } }]);
+  assert(hooks.extractLectureLabel() === '第10讲', 'extractLectureLabel should capture the lecture number');
 
   gmResponses.set('http://127.0.0.1:38765/health', {
     status: 200,

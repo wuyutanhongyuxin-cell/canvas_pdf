@@ -166,6 +166,35 @@
     return DEFAULT_FILE_NAME;
   }
 
+  function getPageTitle() {
+    return sanitizeFilename(document.title || '');
+  }
+
+  function extractLectureLabel() {
+    const candidates = Array.from(document.querySelectorAll('div, span, li, p, button, h3, h4'))
+      .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter(text => /第\s*0*\d+\s*讲/.test(text));
+
+    for (const text of candidates) {
+      const match = text.match(/第\s*0*(\d+)\s*讲/);
+      if (match) {
+        return `第${String(parseInt(match[1], 10)).padStart(2, '0')}讲`;
+      }
+    }
+
+    return '';
+  }
+
+  function getNamingMetadata() {
+    return {
+      title: getCourseTitle(),
+      originalTitle: getCourseTitle(),
+      courseTitle: getCourseTitle(),
+      pageTitle: getPageTitle(),
+      lectureLabel: extractLectureLabel(),
+    };
+  }
+
   function waitFor(getter, label, timeout = WAIT_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
       const existing = getter();
@@ -644,14 +673,17 @@
       }
 
       showToast(`找到 ${imageUrls.length} 张图片，正在提交到本地高清服务...`);
-      const title = getCourseTitle();
+      const title = getNamingMetadata();
       const result = await sendJobToLocalService({
         title,
         sourceUrl: location.href,
         imageUrls,
       });
 
-      showToast(`✅ 高清 PDF 已生成\n页数 ${result.page_count}\n保存位置 ${result.pdf_path}`);
+      const namingNote = result.used_deepseek
+        ? '\n命名来源 DeepSeek'
+        : (result.deepseek_error ? '\n命名已回退到本地规则' : '\n命名来源 本地规则');
+      showToast(`✅ 高清 PDF 已生成\n页数 ${result.page_count}\n保存位置 ${result.pdf_path}${namingNote}`);
 
       setTimeout(hideToast, 5000);
       return result;
@@ -801,6 +833,8 @@
       waitForThumbnailSettle,
       findBestSlideContainer,
       isLikelyCoursePage,
+      extractLectureLabel,
+      getNamingMetadata,
       checkLocalService,
       sendJobToLocalService,
       handleDownload,
