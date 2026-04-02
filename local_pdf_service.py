@@ -59,6 +59,7 @@ def download_image(url: str, output_path: Path, session: requests.Session) -> Pa
 def download_images(urls: Iterable[str], workspace: Path) -> list[Path]:
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
+    session.trust_env = False
 
     downloaded_paths: list[Path] = []
     for index, url in enumerate(urls, start=1):
