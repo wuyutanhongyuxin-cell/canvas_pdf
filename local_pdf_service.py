@@ -20,7 +20,7 @@ from PIL import Image
 HOST = "127.0.0.1"
 PORT = 38765
 DOWNLOAD_TIMEOUT = 30
-DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "sjtu_pdf_exports"
+DEFAULT_OUTPUT_DIR = Path(r"E:\zhiwang_text\canvas_course")
 USER_AGENT = "sjtu-pdf-local-service/1.0"
 
 
@@ -33,6 +33,22 @@ def sanitize_filename(raw: str, fallback: str = "课件") -> str:
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def make_unique_file_path(base_path: Path) -> Path:
+    if not base_path.exists():
+        return base_path
+
+    stem = base_path.stem
+    suffix = base_path.suffix
+    parent = base_path.parent
+    index = 2
+
+    while True:
+        candidate = parent / f"{stem}_{index}{suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def guess_extension(content_type: str, url: str) -> str:
@@ -111,7 +127,7 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None) 
     target_dir = ensure_dir(output_dir or DEFAULT_OUTPUT_DIR)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     workspace = ensure_dir(target_dir / f"{safe_title}-{timestamp}")
-    pdf_path = target_dir / f"{safe_title}.pdf"
+    pdf_path = make_unique_file_path(target_dir / f"{safe_title}.pdf")
 
     image_paths = download_images(urls, workspace)
     build_result = build_pdf_from_paths(image_paths, pdf_path)
