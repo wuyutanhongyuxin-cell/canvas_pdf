@@ -18,6 +18,7 @@ class FakeElement {
     this.eventListeners = {};
     this.textContent = '';
     this.id = '';
+    this.className = '';
     this.src = '';
     this.currentSrc = '';
     this.complete = true;
@@ -25,9 +26,14 @@ class FakeElement {
     this.scrollWidth = 0;
     this.clientWidth = 0;
     this._images = [];
+    this.parentElement = null;
+    this.parentNode = null;
+    this._rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }
 
   appendChild(child) {
+    child.parentElement = this;
+    child.parentNode = this;
     this.children.push(child);
     return child;
   }
@@ -51,6 +57,10 @@ class FakeElement {
     return Object.prototype.hasOwnProperty.call(this.attributes, name)
       ? this.attributes[name]
       : null;
+  }
+
+  getBoundingClientRect() {
+    return this._rect;
   }
 
   querySelectorAll(selector) {
@@ -278,6 +288,21 @@ function createImageNode({ src = '', currentSrc = '', dataset = {}, complete = t
   return element;
 }
 
+function createLectureNode(text, options = {}) {
+  const element = new FakeElement(options.tagName || 'div');
+  element.textContent = text;
+  element.className = options.className || '';
+  element.id = options.id || '';
+  element._rect = options.rect || { left: 0, top: 0, right: 220, bottom: 40, width: 220, height: 40 };
+  for (const [name, value] of Object.entries(options.attributes || {})) {
+    element.setAttribute(name, value);
+  }
+  if (options.parent) {
+    options.parent.appendChild(element);
+  }
+  return element;
+}
+
 async function main() {
   const scriptPath = path.join(__dirname, 'sjtu_slide_downloader.user.js');
   const source = fs.readFileSync(scriptPath, 'utf8');
@@ -344,6 +369,23 @@ async function main() {
   document.setQuerySelectorAll('div, span, li, p, button, h3, h4', [new FakeElement('div')]);
   document.multiResults.set('div, span, li, p, button, h3, h4', [{ textContent: '第10讲 2026-03-16', querySelectorAll() { return []; } }]);
   assert(hooks.extractLectureLabel() === '第10讲', 'extractLectureLabel should capture the lecture number');
+
+  const lectureList = new FakeElement('ul');
+  const lecture01 = createLectureNode('第01讲 2026-03-06', {
+    parent: lectureList,
+    rect: { left: 980, top: 180, right: 1220, bottom: 230, width: 240, height: 50 },
+  });
+  const lecture03Container = new FakeElement('li');
+  lecture03Container.className = 'active selected';
+  lecture03Container.setAttribute('aria-selected', 'true');
+  lecture03Container._rect = { left: 980, top: 320, right: 1220, bottom: 380, width: 240, height: 60 };
+  lectureList.appendChild(lecture03Container);
+  const lecture03 = createLectureNode('第03讲 2026-03-13', {
+    parent: lecture03Container,
+    rect: { left: 990, top: 330, right: 1210, bottom: 370, width: 220, height: 40 },
+  });
+  document.setQuerySelectorAll('div, span, li, p, button, h3, h4', [lecture01, lecture03Container, lecture03]);
+  assert(hooks.extractLectureLabel() === '第03讲', 'extractLectureLabel should prefer the active lecture item');
 
   gmResponses.set('http://127.0.0.1:38765/health', {
     status: 200,

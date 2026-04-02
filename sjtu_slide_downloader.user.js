@@ -171,19 +171,93 @@
     return sanitizeFilename(document.title || '');
   }
 
-  function extractLectureLabel() {
-    const candidates = Array.from(document.querySelectorAll('div, span, li, p, button, h3, h4'))
-      .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim())
-      .filter(text => /第\s*0*\d+\s*讲/.test(text));
+  function normalizeLectureText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
 
-    for (const text of candidates) {
-      const match = text.match(/第\s*0*(\d+)\s*讲/);
-      if (match) {
-        return `第${String(parseInt(match[1], 10)).padStart(2, '0')}讲`;
+  function extractLectureNumber(text) {
+    const match = normalizeLectureText(text).match(/(?:第|绗)\s*0*(\d{1,3})\s*(?:讲|璁)/);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
+  function getLectureCandidateScore(element, text) {
+    const lectureNumber = extractLectureNumber(text);
+    if (lectureNumber === null) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    let score = 0;
+    let current = element;
+    let depth = 0;
+
+    while (current && depth < 5) {
+      const className = String(current.className || '');
+      const id = String(current.id || '');
+      const attrs = [
+        current.getAttribute && current.getAttribute('aria-selected'),
+        current.getAttribute && current.getAttribute('data-active'),
+        current.getAttribute && current.getAttribute('data-selected'),
+        current.getAttribute && current.getAttribute('aria-current'),
+      ].map(value => String(value || '').toLowerCase());
+      const markerText = `${className} ${id}`.toLowerCase();
+
+      if (attrs.includes('true') || attrs.includes('page')) {
+        score += 120;
+      }
+      if (/(^|[\s_-])(active|current|selected|checked|focus|highlight)([\s_-]|$)/.test(markerText)) {
+        score += 80;
+      }
+
+      current = current.parentElement || current.parentNode || null;
+      depth += 1;
+    }
+
+    const normalized = normalizeLectureText(text);
+    if (/^\s*(?:第|绗)\s*0*\d+\s*(?:讲|璁)\s*$/.test(normalized)) {
+      score += 20;
+    } else if (normalized.length <= 24) {
+      score += 10;
+    } else if (normalized.length <= 48) {
+      score += 4;
+    }
+
+    if (typeof element.getBoundingClientRect === 'function') {
+      const rect = element.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 1280;
+      const viewportHeight = window.innerHeight || 720;
+      if (rect && rect.width > 0 && rect.height > 0) {
+        score += 5;
+        if (rect.left >= viewportWidth * 0.55) {
+          score += 12;
+        }
+        if (rect.top >= -20 && rect.bottom <= viewportHeight + 20) {
+          score += 8;
+        }
       }
     }
 
-    return '';
+    return score;
+  }
+
+  function extractLectureLabel() {
+    const candidates = Array.from(document.querySelectorAll('div, span, li, p, button, h3, h4'))
+      .map(element => ({
+        element,
+        text: normalizeLectureText(element.textContent || ''),
+      }))
+      .filter(item => extractLectureNumber(item.text) !== null)
+      .map(item => ({
+        ...item,
+        score: getLectureCandidateScore(item.element, item.text),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    if (!candidates.length) {
+      return '';
+    }
+
+    const lectureNumber = extractLectureNumber(candidates[0].text);
+    return lectureNumber === null ? '' : `第${String(lectureNumber).padStart(2, '0')}讲`;
   }
 
   function getNamingMetadata() {

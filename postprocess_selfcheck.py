@@ -31,6 +31,19 @@ def create_photo_page(path: Path) -> None:
     image.close()
 
 
+def create_desktop_wallpaper_page(path: Path) -> None:
+    image = Image.new("RGB", (1920, 1080), (33, 84, 145))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 1010, 1920, 1080), fill=(54, 71, 92))
+    draw.text((520, 360), "让每个学生更优秀", fill=(245, 245, 245))
+    for index, label in enumerate(["回收站", "此电脑", "Chrome", "VLC"]):
+        top = 40 + index * 120
+        draw.rectangle((18, top, 58, top + 40), fill=(230, 230, 230))
+        draw.text((12, top + 48), label, fill=(240, 240, 240))
+    image.save(path, quality=95)
+    image.close()
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -38,19 +51,23 @@ def main() -> None:
         blank = root / "blank.jpg"
         slide = root / "slide.jpg"
         photo = root / "photo.jpg"
+        wallpaper = root / "wallpaper.jpg"
 
         create_blank_slide(blank)
         create_text_slide(slide)
         create_photo_page(photo)
+        create_desktop_wallpaper_page(wallpaper)
         try:
             os.chdir(root)
-            analyses = analyze_pages([blank, slide, photo])
+            analyses = analyze_pages([blank, slide, photo, wallpaper])
             kept, full = select_pages_to_keep(analyses)
 
             by_name = {Path(item["path"]).name: item for item in full}
             assert by_name["blank.jpg"]["should_drop"] is True
             assert by_name["slide.jpg"]["should_drop"] is False
             assert by_name["photo.jpg"]["should_drop"] is True
+            assert by_name["wallpaper.jpg"]["should_drop"] is True
+            assert by_name["wallpaper.jpg"]["decision_reason"] == "desktop_wallpaper"
             assert [path.name for path in kept] == ["slide.jpg"]
 
             naming = suggest_title_with_deepseek(

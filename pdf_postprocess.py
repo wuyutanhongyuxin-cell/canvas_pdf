@@ -34,6 +34,30 @@ def compute_page_metrics(image_path: Path) -> dict[str, Any]:
         edge_pixels = sum(edge_histogram[48:256])
         edge_ratio = edge_pixels / total_pixels if total_pixels else 0.0
 
+        center_box = (
+            int(width * 0.2),
+            int(height * 0.15),
+            int(width * 0.8),
+            int(height * 0.85),
+        )
+        left_box = (
+            0,
+            0,
+            int(width * 0.12),
+            height,
+        )
+
+        center_gray = gray.crop(center_box)
+        left_gray = gray.crop(left_box)
+
+        center_total = center_gray.size[0] * center_gray.size[1]
+        left_total = left_gray.size[0] * left_gray.size[1]
+
+        center_edge_histogram = center_gray.filter(ImageFilter.FIND_EDGES).histogram()
+        left_edge_histogram = left_gray.filter(ImageFilter.FIND_EDGES).histogram()
+
+        blue_dominance = mean_b - max(mean_r, mean_g)
+
         return {
             "path": str(image_path),
             "width": width,
@@ -44,6 +68,11 @@ def compute_page_metrics(image_path: Path) -> dict[str, Any]:
             "colorfulness": round(colorfulness, 4),
             "entropy": round(entropy, 4),
             "edge_ratio": round(edge_ratio, 4),
+            "center_entropy": round(center_gray.entropy(), 4),
+            "center_edge_ratio": round(sum(center_edge_histogram[48:256]) / center_total, 4) if center_total else 0.0,
+            "left_entropy": round(left_gray.entropy(), 4),
+            "left_edge_ratio": round(sum(left_edge_histogram[48:256]) / left_total, 4) if left_total else 0.0,
+            "blue_dominance": round(blue_dominance, 4),
         }
 
 
@@ -53,6 +82,11 @@ def classify_page(metrics: dict[str, Any]) -> dict[str, Any]:
     colorfulness = metrics["colorfulness"]
     entropy = metrics["entropy"]
     edge_ratio = metrics["edge_ratio"]
+    center_entropy = metrics["center_entropy"]
+    center_edge_ratio = metrics["center_edge_ratio"]
+    left_entropy = metrics["left_entropy"]
+    left_edge_ratio = metrics["left_edge_ratio"]
+    blue_dominance = metrics["blue_dominance"]
 
     is_likely_slide = (
         white_ratio >= 0.45
@@ -69,11 +103,20 @@ def classify_page(metrics: dict[str, Any]) -> dict[str, Any]:
         and colorfulness > 45
         and edge_ratio < 0.035
     )
-    should_drop = is_low_information or is_likely_photo
+    is_desktop_wallpaper = (
+        center_entropy < 3.45
+        and center_edge_ratio < 0.05
+        and left_entropy > center_entropy + 0.25
+        and left_edge_ratio > center_edge_ratio * 1.45
+        and blue_dominance > 30
+    )
+    should_drop = is_low_information or is_likely_photo or is_desktop_wallpaper
 
     reason = "keep"
     if is_low_information:
         reason = "low_information"
+    elif is_desktop_wallpaper:
+        reason = "desktop_wallpaper"
     elif is_likely_photo:
         reason = "photo_or_desktop"
     elif not is_likely_slide:
@@ -84,6 +127,7 @@ def classify_page(metrics: dict[str, Any]) -> dict[str, Any]:
         "is_likely_slide": is_likely_slide,
         "is_low_information": is_low_information,
         "is_likely_photo": is_likely_photo,
+        "is_desktop_wallpaper": is_desktop_wallpaper,
         "should_drop": should_drop,
         "decision_reason": reason,
     }
