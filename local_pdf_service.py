@@ -21,7 +21,9 @@ from pdf_postprocess import analyze_pages, select_pages_to_keep, suggest_title_w
 
 HOST = "127.0.0.1"
 PORT = 38765
-DOWNLOAD_TIMEOUT = 30
+DOWNLOAD_TIMEOUT = (15, 90)
+DOWNLOAD_RETRIES = 3
+DOWNLOAD_RETRY_BACKOFF = 2.0
 DEFAULT_OUTPUT_DIR = Path(r"E:\zhiwang_text\canvas_course")
 USER_AGENT = "sjtu-pdf-local-service/1.0"
 
@@ -65,13 +67,22 @@ def guess_extension(content_type: str, url: str) -> str:
 
 
 def download_image(url: str, output_path: Path, session: requests.Session) -> Path:
-    response = session.get(url, timeout=DOWNLOAD_TIMEOUT, stream=True)
-    response.raise_for_status()
-    with output_path.open("wb") as handle:
-        for chunk in response.iter_content(chunk_size=1024 * 128):
-            if chunk:
-                handle.write(chunk)
-    return output_path
+    last_error: Exception | None = None
+    for attempt in range(1, DOWNLOAD_RETRIES + 1):
+        try:
+            response = session.get(url, timeout=DOWNLOAD_TIMEOUT, stream=True)
+            response.raise_for_status()
+            with output_path.open("wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 128):
+                    if chunk:
+                        handle.write(chunk)
+            return output_path
+        except (requests.Timeout, requests.ConnectionError) as error:
+            last_error = error
+            if attempt < DOWNLOAD_RETRIES:
+                time.sleep(min(DOWNLOAD_RETRY_BACKOFF ** attempt, 8.0))
+    assert last_error is not None
+    raise last_error
 
 
 def download_images(urls: Iterable[str], workspace: Path) -> list[Path]:
@@ -121,7 +132,7 @@ def build_pdf_from_paths(image_paths: Iterable[Path], pdf_path: Path) -> dict:
             image.close()
 
 
-def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, source_url: str = "") -> dict:
+def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, source_url: str = "", subfolder: str = "") -> dict:
     if not urls:
         raise ValueError("图片 URL 列表为空")
 
@@ -135,7 +146,9 @@ def create_pdf_job(title: str, urls: list[str], output_dir: Path | None = None, 
         safe_title = sanitize_filename(title.get("originalTitle") or title.get("title") or "课件")
     else:
         safe_title = sanitize_filename(title)
-    target_dir = ensure_dir(output_dir or DEFAULT_OUTPUT_DIR)
+    base_dir = output_dir or DEFAULT_OUTPUT_DIR
+    safe_subfolder = sanitize_filename(subfolder, fallback="") if subfolder else ""
+    target_dir = ensure_dir(base_dir / safe_subfolder if safe_subfolder else base_dir)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     workspace = ensure_dir(target_dir / f"{safe_title}-{timestamp}")
 
@@ -207,6 +220,7 @@ class PdfJobHandler(BaseHTTPRequestHandler):
                 urls=list(payload.get("imageUrls") or []),
                 output_dir=self.config.output_dir,
                 source_url=payload.get("sourceUrl") or "",
+                subfolder=payload.get("subfolder") or "",
             )
         except Exception as error:  # noqa: BLE001
             self._write_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})

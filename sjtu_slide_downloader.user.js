@@ -8,6 +8,8 @@
 // @match        http://*.sjtu.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @grant        window.onurlchange
 // @connect      self
 // @connect      127.0.0.1
@@ -102,6 +104,24 @@
       .trim();
 
     return (normalized || DEFAULT_FILE_NAME).slice(0, 80);
+  }
+
+  function promptSubfolder() {
+    const lastValue = (typeof GM_getValue === 'function')
+      ? String(GM_getValue('lastSubfolder', '') || '')
+      : '';
+    const raw = window.prompt(
+      '请输入本次课程/课件子文件夹名称(回车沿用上次,留空走默认目录,取消终止下载):',
+      lastValue,
+    );
+    if (raw === null) {
+      return null;
+    }
+    const trimmed = String(raw).trim();
+    if (trimmed && typeof GM_setValue === 'function') {
+      GM_setValue('lastSubfolder', trimmed);
+    }
+    return trimmed;
   }
 
   function showToast(message) {
@@ -729,6 +749,12 @@
     setButtonBusy(true);
 
     try {
+      const subfolder = promptSubfolder();
+      if (subfolder === null) {
+        hideToast();
+        return;
+      }
+
       showToast('正在检查本地高清 PDF 服务...');
       await checkLocalService();
 
@@ -753,6 +779,7 @@
         title,
         sourceUrl: location.href,
         imageUrls,
+        subfolder,
       });
 
       const namingNote = result.used_deepseek
