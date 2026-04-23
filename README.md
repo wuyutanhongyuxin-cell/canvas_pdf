@@ -115,6 +115,201 @@ start_local_pdf_service.bat
 3. 点击右下角“下载高清 PDF”。
 4. 保持页面和本地服务窗口不要关闭，等待任务完成。
 
+## 客户电脑首次部署（严格 CMD 教程）
+
+> 适用场景：在客户的 Windows 10 / 11 电脑上**第一次**安装本工具。  
+> 全程在 **cmd**（不是 PowerShell）里执行，按顺序一条条来，不要跳步。
+
+### 步骤 0｜确认系统
+
+打开开始菜单 → 输入 `cmd` → 回车，弹出黑色窗口后执行：
+
+```cmd
+ver
+```
+
+要求是 Windows 10 或 Windows 11。
+
+### 步骤 1｜安装 Python 3.10+
+
+1. 浏览器打开 <https://www.python.org/downloads/windows/>
+2. 下载 Python 3.10 或更高版本的 **Windows installer (64-bit)**
+3. 双击安装时**务必勾选**底部的 `Add python.exe to PATH`，再点 Install Now
+4. 安装结束后**关掉所有旧 cmd**，重新打开一个新 cmd 窗口（PATH 才会生效），执行：
+
+```cmd
+python --version
+pip --version
+```
+
+期望输出（版本不低于 3.10 即可）：
+
+```text
+Python 3.11.x
+pip 24.x from ...
+```
+
+如果提示 `'python' 不是内部或外部命令`，说明 PATH 没加上：重新运行 Python installer，选 Modify → 勾上 `Add Python to environment variables` → 应用。
+
+### 步骤 2｜放置项目文件
+
+把整个 `canvas_pdf` 项目文件夹拷到客户电脑一个固定位置，建议：
+
+```text
+E:\claude_ask\canvas_pdf
+```
+
+> 路径**不要含空格和中文符号**，否则 bat 启动会出问题。
+
+进入目录确认文件齐全：
+
+```cmd
+cd /d E:\claude_ask\canvas_pdf
+dir
+```
+
+至少要看到：
+
+```text
+local_pdf_service.py
+sjtu_slide_downloader.user.js
+pdf_postprocess.py
+deepseek_client.py
+start_local_pdf_service.bat
+requirements.txt
+```
+
+### 步骤 3｜安装 Python 依赖
+
+```cmd
+cd /d E:\claude_ask\canvas_pdf
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+如果客户网络访问 pypi.org 慢或超时，临时换清华源：
+
+```cmd
+python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+验证依赖装好了：
+
+```cmd
+python -c "import requests, PIL; print('deps ok')"
+```
+
+期望输出一行：
+
+```text
+deps ok
+```
+
+### 步骤 4｜准备输出目录
+
+默认 PDF 写到 `E:\zhiwang_text\canvas_course`。如果客户机没有 E 盘或要换位置，按下文“PDF 保存位置”那一节改 `DEFAULT_OUTPUT_DIR`。
+
+提前手动建好这个目录，避免首次写入失败：
+
+```cmd
+mkdir E:\zhiwang_text\canvas_course 2>nul
+```
+
+（换路径就把这里也改成对应的目录。）
+
+### 步骤 5｜装浏览器脚本
+
+1. 在 Chrome 或 Edge 装 Tampermonkey 扩展
+2. 点 Tampermonkey 图标 → “管理面板” → “+” 新建脚本
+3. 用记事本打开 `E:\claude_ask\canvas_pdf\sjtu_slide_downloader.user.js`，**全选复制**
+4. 粘贴到 Tampermonkey 的编辑器，覆盖默认模板，按 Ctrl+S 保存
+5. 浏览器地址栏访问 `chrome://extensions/`，找到 Tampermonkey → “详情” → 打开
+   - “允许访问文件网址”
+   - “允许用户脚本”
+
+### 步骤 6｜（可选）配置 DeepSeek
+
+要启用 AI 命名增强：
+
+```cmd
+cd /d E:\claude_ask\canvas_pdf
+notepad .env
+```
+
+写入一行后保存：
+
+```text
+DEEPSEEK_API_KEY=sk-你的真实密钥
+```
+
+不配置也能正常出 PDF，命名走本地回退规则。
+
+### 步骤 7｜首次启动并验证
+
+开一个 cmd 窗口启动服务：
+
+```cmd
+cd /d E:\claude_ask\canvas_pdf
+python local_pdf_service.py
+```
+
+或者直接双击：
+
+```text
+E:\claude_ask\canvas_pdf\start_local_pdf_service.bat
+```
+
+启动成功的标志是窗口里出现两行：
+
+```text
+[local-pdf-service] listening on http://127.0.0.1:38765
+[local-pdf-service] output dir: E:\zhiwang_text\canvas_course
+```
+
+**这个 cmd 窗口在使用期间不能关。**
+
+再开**另一个** cmd 做健康检查：
+
+```cmd
+curl http://127.0.0.1:38765/health
+```
+
+期望返回（字段顺序可能不同）：
+
+```text
+{"ok": true, ...}
+```
+
+如果 curl 报 `Failed to connect` / 超时，说明服务没起来，回服务窗口看错误信息。
+
+### 步骤 8｜跑一次完整流程
+
+1. 浏览器打开任一交大课程页面
+2. 等 PPT 缩略图区加载完毕
+3. 页面右下角出现“下载高清 PDF”按钮 → 点击
+4. 弹出“输入子文件夹名称”时，可填课程或讲次名（留空就走默认目录）
+5. 等任务完成。页数多时可能持续几分钟，期间**不要关浏览器、不要关服务窗口**
+6. 完成后到输出目录确认 PDF 存在
+
+### 步骤 9｜以后每天怎么用
+
+部署完成后，客户日常只需要两步：
+
+1. 双击 `start_local_pdf_service.bat`，等到出现 `listening on http://127.0.0.1:38765`
+2. 浏览器打开课程页 → 点“下载高清 PDF”
+
+### 部署期常见问题
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| `'python' 不是内部或外部命令` | 安装时没勾 Add to PATH | 重装 Python 并勾选；或手动把 Python 安装目录加到系统 PATH，重开 cmd |
+| `pip install` 报 SSL / 超时 | 客户网络限速或被墙 | 改用清华源 `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
+| 服务窗口一闪而过 | 缺依赖 / 端口占用 | 不要双击 bat，改用 cmd 启动 `python local_pdf_service.py` 看完整报错 |
+| 端口 38765 被占用 | 之前的服务没退干净 | 任务管理器结束 python.exe 后重启，或重启电脑 |
+| `curl /health` 连不上 | 服务未起 / 本地防火墙拦回环 | 先看服务窗口日志；必要时在 Windows 防火墙放行 `127.0.0.1:38765` |
+| 课程页没有按钮 | Tampermonkey 没启用 / 页面没加载完 | 详见下文“快速排障” |
+| 单张图片下载失败 | 客户网络抖动 | 工具自带 3 次重试 + 退避；反复失败就换网络重试整个任务 |
+
 ## 文件输出规则
 
 ### PDF 保存位置
